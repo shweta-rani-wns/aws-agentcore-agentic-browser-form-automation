@@ -1,0 +1,29 @@
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+ 
+# Python virtual environments
+venv/
+.venv/
+env/
+ 
+# Python cache
+__pycache__/
+*.py[cod]
+ 
+# Local database and generated data
+data/
+*.sqlite3
+*.db
+ 
+# IDE files
+.vscode/
+.idea/
+ 
+# AWS SAM build output
+.aws-sam/
+ 
+# OS files
+.DS_Store
+Thumbs.db

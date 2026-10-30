@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Booking Automation Lab</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% if recaptcha_site_key %}
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+  {% endif %}
+</head>
+<body>
+<header>
+  <div class="eyebrow">REMOTE BROWSER AUTOMATION TEST SITE</div>
+  <h1>Booking Automation Lab</h1>
+  <p>A real test form with server-side booking persistence, OTP verification, CAPTCHA, cascading dropdowns, and audit events.</p>
+</header>
+<main>
+  <div class="notice"><strong>Controlled test environment.</strong> Use synthetic details and a mailbox you control. Submission creates a real record in the local database only after OTP and CAPTCHA verification succeed.</div>
+  <section class="panel">
+    <div class="section-heading"><span>01</span><div><h2>Booking details</h2><p>Complete the form in order. Dependent dropdowns load from the API.</p></div></div>
+    <form id="bookingForm">
+      <div class="grid">
+        <label>Booking reference *<input id="booking_reference" name="booking_reference" required value="LAB-BOOK-1001"></label>
+        <label>Service type *<select id="service_type" required><option value="">Select service</option><option>Standard</option><option>Express</option><option>Priority</option></select></label>
+        <label>Customer name *<input id="customer_name" required value="Demo Customer" autocomplete="name"></label>
+        <label>Email for OTP *<input id="customer_email" type="email" required value="" placeholder="you@example.com" autocomplete="email"></label>
+        <label>Country *<select id="country" required><option value="">Loading countries…</option></select></label>
+        <label>Region / State *<select id="region" required disabled><option value="">Choose country first</option></select></label>
+        <label>City / Area *<select id="city" required disabled><option value="">Choose region first</option></select></label>
+        <label>Service date *<input id="service_date" type="date" required></label>
+      </div>
+      <div class="button-row">
+        <button type="button" class="secondary" id="alertButton">Test JavaScript alert()</button>
+        <button type="button" class="secondary" id="confirmButton">Test JavaScript confirm()</button>
+      </div>
+      <div class="section-heading sub"><span>02</span><div><h2>Two-factor verification</h2><p>Request a one-time code by email. The server validates expiry and attempts.</p></div></div>
+      <div class="otp-row">
+        <button type="button" id="requestOtp">Send email verification code</button>
+        <label class="otp-label">Email OTP<input id="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" required></label>
+      </div>
+      <div class="section-heading sub"><span>03</span><div><h2>CAPTCHA verification</h2><p>Submission requires server-side CAPTCHA verification. CAPTCHA is not bypassed by the automation.</p></div></div>
+      {% if recaptcha_site_key %}
+      <div class="g-recaptcha" data-sitekey="{{ recaptcha_site_key }}"></div>
+      {% else %}
+      <div class="warning">CAPTCHA is not configured yet. Final submission will be rejected until a reCAPTCHA site key and secret are configured in the environment.</div>
+      {% endif %}
+      <div class="button-row submit-row">
+        <button type="submit" id="submitBooking">Submit booking</button>
+      </div>
+    </form>
+    <div id="status" class="status" role="status" aria-live="polite">Ready.</div>
+    <div id="result" class="result" hidden></div>
+  </section>
+  <section class="panel">
+    <div class="section-heading"><span>04</span><div><h2>Verify the real saved booking</h2><p>After a successful submission, query the API by booking reference. This is independent verification.</p></div></div>
+    <div class="verify-row"><input id="verifyReference" placeholder="Booking reference"><button id="verifyButton" type="button" class="secondary">Verify saved booking</button></div>
+    <pre id="verifyOutput" class="output">No verification performed yet.</pre>
+  </section>
+  <section class="panel">
+    <div class="section-heading"><span>05</span><div><h2>Application audit events</h2><p>Shows server-recorded events. AgentCore Browser session recording is configured separately in AWS.</p></div></div>
+    <button type="button" class="secondary" id="auditButton">Refresh audit log</button>
+    <pre id="auditOutput" class="output">No audit events loaded.</pre>
+  </section>
+</main>
+<footer>Booking Automation Lab · test data only · no real commercial booking</footer>
+<script>
+const $ = (id) => document.getElementById(id);
+const statusBox = $("status");
+function status(message, kind="info") { statusBox.textContent = message; statusBox.className = `status ${kind}`; }
+async function api(path, options={}) {
+  const response = await fetch(path, {credentials:"same-origin", ...options});
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
+  return body;
+}
+function setOptions(select, values, placeholder) {
+  select.replaceChildren(new Option(placeholder, ""));
+  values.forEach(value => select.add(new Option(value, value)));
+  select.disabled = values.length === 0;
+}
+async function loadCountries() {
+  const data = await api("/api/locations");
+  setOptions($("country"), data.countries, "Select country");
+}
+$("country").addEventListener("change", async () => {
+  setOptions($("region"), [], "Loading regions…");
+  setOptions($("city"), [], "Choose region first");
+  if (!$("country").value) return;
+  try {
+    const data = await api(`/api/locations?country=${encodeURIComponent($("country").value)}`);
+    setOptions($("region"), data.regions, "Select region");
+  } catch (e) { status(e.message, "error"); }
+});
+$("region").addEventListener("change", async () => {
+  setOptions($("city"), [], "Loading cities…");
+  if (!$("country").value || !$("region").value) return;
+  try {
+    const data = await api(`/api/locations?country=${encodeURIComponent($("country").value)}&region=${encodeURIComponent($("region").value)}`);
+    setOptions($("city"), data.cities, "Select city");
+  } catch (e) { status(e.message, "error"); }
+});
+$("alertButton").addEventListener("click", () => {
+  alert("Booking Automation Lab: this is a real JavaScript alert dialog.");
+  status("Alert dialog was dismissed.");
+});
+$("confirmButton").addEventListener("click", () => {
+  const accepted = confirm("Do you want to continue this test action?");
+  status(`Confirm dialog result: ${accepted ? "OK" : "Cancel"}.`);
+});
+$("requestOtp").addEventListener("click", async () => {
+  const email = $("customer_email").value.trim();
+  if (!email) { status("Enter the email address before requesting an OTP.", "error"); return; }
+  try {
+    $("requestOtp").disabled = true;
+    const result = await api("/api/otp/request", {
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({email})
+    });
+    status(result.message, "success");
+  } catch (e) { status(e.message, "error"); }
+  finally { $("requestOtp").disabled = false; }
+});
+$("bookingForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!confirm("Submit this booking to the test application's real backend?")) {
+    status("Submission cancelled by user.");
+    return;
+  }
+  const captcha = document.querySelector('[name="g-recaptcha-response"]');
+  const payload = {
+    booking_reference: $("booking_reference").value.trim(),
+    service_type: $("service_type").value,
+    customer_name: $("customer_name").value.trim(),
+    customer_email: $("customer_email").value.trim(),
+    country: $("country").value,
+    region: $("region").value,
+    city: $("city").value,
+    service_date: $("service_date").value,
+    otp: $("otp").value.trim(),
+    captcha_token: captcha ? captcha.value : ""
+  };
+  try {
+    $("submitBooking").disabled = true;
+    status("Submitting to the server and verifying OTP/CAPTCHA…");
+    const result = await api("/api/bookings", {
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
+    });
+    $("result").hidden = false;
+    $("result").textContent = JSON.stringify(result, null, 2);
+    $("verifyReference").value = result.booking_reference;
+    status("Booking saved and independently verifiable. Reference: " + result.booking_reference, "success");
+    await verifyBooking();
+    await refreshAudit();
+  } catch (e) { status(e.message, "error"); }
+  finally { $("submitBooking").disabled = false; }
+});
+async function verifyBooking() {
+  const ref = $("verifyReference").value.trim();
+  if (!ref) { status("Enter a booking reference to verify.", "error"); return; }
+  try {
+    const result = await api(`/api/bookings/${encodeURIComponent(ref)}`);
+    $("verifyOutput").textContent = JSON.stringify(result, null, 2);
+    status("Found persisted booking record.", "success");
+  } catch (e) { $("verifyOutput").textContent = e.message; status(e.message, "error"); }
+}
+async function refreshAudit() {
+  try { $("auditOutput").textContent = JSON.stringify(await api("/api/audit"), null, 2); }
+  catch (e) { $("auditOutput").textContent = e.message; }
+}
+$("verifyButton").addEventListener("click", verifyBooking);
+$("auditButton").addEventListener("click", refreshAudit);
+loadCountries().catch(e => status(e.message, "error"));
+</script>
+</body>
+</html>
